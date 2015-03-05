@@ -276,13 +276,35 @@ function debug() {
   }
 }
 
+// Debug timing
+Request.log_timing = process.env.NODE_REQUEST_LOG_TIMING &&
+                     process.env.NODE_REQUEST_LOG_TIMING !== 'false'
+function log_request_time(r, event) {
+  if (Request.log_timing) {
+    var now = Date.now()
+
+    if (event !== 'start') {
+      var log = {
+        facility: 'request',
+        method: r.method,
+        uri: r.uri.href,
+        event: event,
+        time: now - r._last_event_time
+      }
+      console.error(JSON.stringify(log))
+    }
+
+    r._last_event_time = now
+  }
+}
+
 Request.prototype.setupTunnel = function () {
   var self = this
 
   if (typeof self.proxy === 'string') {
     self.proxy = url.parse(self.proxy)
   }
-  
+
   if (!self.proxy || !self.tunnel) {
     return false
   }
@@ -298,7 +320,7 @@ Request.prototype.setupTunnel = function () {
   self.proxyHeaders = constructProxyHeaderWhiteList(self.headers, proxyHeaderWhiteList)
   self.proxyHeaders.host = constructProxyHost(self.uri)
   proxyHeaderExclusiveList.forEach(self.removeHeader, self)
- 
+
   // Set Agent from Tunnel Data
   var tunnelFn = getTunnelFn(self)
   var tunnelOptions = constructTunnelOptions(self)
@@ -891,6 +913,7 @@ Request.prototype.start = function () {
   delete reqOptions.auth
 
   debug('make request', self.uri.href)
+  log_request_time(self, 'start')
   self.req = self.httpModule.request(reqOptions)
 
   if (self.timeout && !self.timeoutTimer) {
@@ -948,6 +971,7 @@ Request.prototype.onRequestError = function (error) {
     clearTimeout(self.timeoutTimer)
     self.timeoutTimer = null
   }
+  log_request_time(self, 'error')
   self.emit('error', error)
 }
 
@@ -1038,6 +1062,7 @@ Request.prototype.onRequestResponse = function (response) {
     })
 
     response.on('end', function () {
+      log_request_time(self, 'end')
       self._ended = true
     })
 
@@ -1107,6 +1132,7 @@ Request.prototype.onRequestResponse = function (response) {
         debug('end event', self.uri.href)
         if (self._aborted) {
           debug('aborted', self.uri.href)
+          log_request_time(self, 'abort')
           return
         }
 
@@ -1145,6 +1171,7 @@ Request.prototype.onRequestResponse = function (response) {
       self.on('end', function () {
         if (self._aborted) {
           debug('aborted', self.uri.href)
+          log_request_time(self, 'aborted')
           return
         }
         self.emit('complete', response)
